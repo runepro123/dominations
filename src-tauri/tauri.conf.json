@@ -40,7 +40,7 @@
       "icons/icon.ico"
     ],
     "publisher": "Domination Project",
-    "category": "Strategy",
+    "category": "Strategy Game",
     "shortDescription": "World conquest simulator",
     "longDescription": "Pick a nation and conquer the world. Domination is a turn-based world conquest simulator with AI diplomacy, economy, and 250+ nations.",
     "android": {
