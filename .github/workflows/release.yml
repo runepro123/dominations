@@ -117,8 +117,12 @@ jobs:
       # independently. The result feeds tauri-action's releaseBody on
       # both uploads; whichever job finishes last wins the final body,
       # but since both produce identical text, this is deterministic.
+      # `shell: bash` is REQUIRED on windows-latest because the default
+      # shell is PowerShell, where $(echo ... | sed ...) is a syntax
+      # error (PowerShell parses $(...) as a subexpression).
       - name: Extract CHANGELOG section for this tag
         id: notes
+        shell: bash
         run: |
           VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
           NOTES=$(node scripts/release-notes.mjs "$VERSION" || echo "")
