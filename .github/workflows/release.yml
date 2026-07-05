@@ -84,6 +84,15 @@ jobs:
           args: --bundles appimage
 
   windows:
+    # SERIALIZE: the Windows job waits for the Linux job to finish so
+    # tauri-action@v0's latest.json generation is deterministic. If both
+    # jobs ran in parallel, each would call `tauri-apps/tauri-action@v0`
+    # against the same tag, race on `latest.json` upload, and the final
+    # file would only contain whichever platform's tauri-action
+    # invocation finished last. Serializing guarantees the Windows job
+    # runs SECOND and overwrites `latest.json` with the union of both
+    # platforms' signed manifests.
+    needs: linux
     name: Build Windows NSIS installer
     runs-on: windows-latest
     timeout-minutes: 30
