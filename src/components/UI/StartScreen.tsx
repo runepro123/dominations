@@ -176,6 +176,8 @@ export function StartScreen() {
           )}
         </aside>
       </div>
+
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

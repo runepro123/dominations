@@ -16,15 +16,14 @@ export function UpdateModal() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
 
+  // Include 'failed' so a failed check surfaces to the player with a
+  // Retry button instead of silently disappearing.
   const isOpen =
     status === 'available' ||
     status === 'downloading' ||
-    status === 'downloaded';
+    status === 'downloaded' ||
+    status === 'failed';
 
-  // When a new version is detected, re-run the check so we have the live
-  // `Update` object — `checkForUpdate` returns the manifest-aware handle
-  // that powers `downloadAndInstall`. Without this we'd only have plain
-  // metadata from the store, which doesn't expose downloadAndInstall.
   useEffect(() => {
     if (status === 'available' && available.version && !update) {
       let cancelled = false;
@@ -64,6 +63,11 @@ export function UpdateModal() {
     }
   }
 
+  async function handleRetry() {
+    useUpdaterStore.getState().setError(null);
+    await checkForUpdate({ force: true });
+  }
+
   function handleLater() {
     useUpdaterStore.getState().setStatus('idle');
     setUpdate(null);
@@ -84,6 +88,7 @@ export function UpdateModal() {
                 `Downloading v${available.version ?? ''}…`}
               {status === 'downloaded' &&
                 `Ready to apply v${available.version ?? ''}`}
+              {status === 'failed' && 'Update failed'}
             </h2>
           </div>
           <button
@@ -96,22 +101,24 @@ export function UpdateModal() {
           </button>
         </div>
 
-        <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-          {available.pubDate && (
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2">
-              Released {new Date(available.pubDate).toLocaleDateString()}
-            </p>
-          )}
-          {available.notes ? (
-            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-200 leading-relaxed">
-              {available.notes}
-            </pre>
-          ) : (
-            <p className="text-sm text-slate-400 italic">
-              No release notes were attached to this build.
-            </p>
-          )}
-        </div>
+        {status !== 'failed' && (
+          <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+            {available.pubDate && (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2">
+                Released {new Date(available.pubDate).toLocaleDateString()}
+              </p>
+            )}
+            {available.notes ? (
+              <pre className="whitespace-pre-wrap font-sans text-sm text-slate-200 leading-relaxed">
+                {available.notes}
+              </pre>
+            ) : (
+              <p className="text-sm text-slate-400 italic">
+                No release notes were attached to this build.
+              </p>
+            )}
+          </div>
+        )}
 
         {status === 'downloading' && (
           <div className="px-6 pb-4">
@@ -119,30 +126,38 @@ export function UpdateModal() {
               <div
                 className="h-full bg-accent-gold transition-[width] duration-200"
                 style={{
-                  width: progress.percent != null ? `${progress.percent}%` : '12%',
+                  width:
+                    progress.percent != null
+                      ? `${progress.percent}%`
+                      : '12%',
                 }}
               />
             </div>
             <div className="flex justify-between text-[10px] tracking-[0.2em] uppercase text-slate-400 mt-2">
-              <span>
-                {formatBytes(progress.chunkedBytes)} /{' '}
-                {progress.totalBytes ? formatBytes(progress.totalBytes) : '—'}
-              </span>
-              <span>{progress.percent ?? '…'}%</span>
+              <span>{formatBytes(progress.chunkedBytes)}</span>
+              <span>downloading…</span>
             </div>
           </div>
         )}
 
         {status === 'downloaded' && (
           <div className="px-6 pb-4 text-xs text-slate-300">
-            Installer downloaded. The update will apply automatically the
-            next time the game quits, or hit <em>Restart now</em> below.
+            Installer downloaded. The update applies automatically the next
+            time the game closes. Just quit and reopen whenever you're ready.
           </div>
         )}
 
-        {error && status === 'failed' && (
-          <div className="px-6 pb-4 text-xs text-accent-crimson">
-            Update failed: {error}
+        {status === 'failed' && (
+          <div className="px-6 pb-4">
+            <p className="text-sm text-slate-300 leading-relaxed">
+              The update check or download failed. You can keep playing the
+              current build and try again, or close this and check later.
+            </p>
+            {error && (
+              <div className="mt-3 text-xs text-accent-crimson font-mono break-all">
+                {error}
+              </div>
+            )}
           </div>
         )}
 
@@ -151,7 +166,7 @@ export function UpdateModal() {
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-slate-300">
                 Skip v{available.version} permanently? You can still update
-                via Settings → channel toggle.
+                via Settings.
               </p>
               <div className="flex gap-2 shrink-0">
                 <button
@@ -202,16 +217,25 @@ export function UpdateModal() {
                 </button>
               )}
               {status === 'downloaded' && (
-                <button
-                  onClick={() => {
-                    handleInstallNow();
-                  }}
-                  disabled
-                  className="px-5 py-2 text-xs uppercase tracking-[0.2em] bg-accent-gold text-ink-900 font-bold rounded shadow-lg shadow-accent-gold/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Quit and relaunch to apply the installer"
-                >
-                  Restart to apply (close & reopen)
-                </button>
+                <p className="text-xs text-slate-400">
+                  Close the app to finish installing.
+                </p>
+              )}
+              {status === 'failed' && (
+                <>
+                  <button
+                    onClick={handleLater}
+                    className="px-4 py-2 text-xs uppercase tracking-[0.2em] border border-white/20 text-slate-100 rounded hover:bg-white/5"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    onClick={handleRetry}
+                    className="px-5 py-2 text-xs uppercase tracking-[0.2em] bg-accent-gold text-ink-900 font-bold rounded shadow-lg shadow-accent-gold/30 hover:scale-[1.02] transition-transform"
+                  >
+                    Retry
+                  </button>
+                </>
               )}
             </div>
           )}

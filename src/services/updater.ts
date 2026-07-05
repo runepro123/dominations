@@ -2,28 +2,25 @@
 //
 // Wraps @tauri-apps/plugin-updater behind:
 //   - 24h throttle (per user preference — most launches noop silently)
-//   - stable / beta channel selection (URL switched per channel)
+//   - channel preference persisted (stable/beta) — currently decorative;
+//     Tauri 2 plugin-updater does NOT accept per-call endpoint selection.
+//     Channels are routed by listing `endpoints[]` in tauri.conf.json
+//     (the plugin probes each in order). For genuine runtime channel
+//     switching, use a separate bundle id and installer.
 //   - skip-this-version persistence (survives across installs)
 //   - graceful noop in browser / PWA / Tauri dev mode
 //
-// Persistence lives in Tauri appData via LazyStore('domination-settings.json')
+// Persistence lives in Tauri appData via LazyStore('domination-settings.json'),
 // which is independent of webview storage and survives reinstalls, so
 // "Skip this version" still skips that exact version after an update.
 
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { LazyStore } from '@tauri-apps/plugin-store';
 import { getVersion as getAppVersion } from '@tauri-apps/api/app';
-import { useUpdaterStore } from './updaterStore';
+import { useUpdaterStore, type UpdateChannel } from './updaterStore';
 
 const THROTTLE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SETTINGS_FILE = 'domination-settings.json';
-
-const ENDPOINTS = {
-  stable:
-    'https://github.com/runepro123/dominations/releases/latest/download/latest.json',
-  beta:
-    'https://github.com/runepro123/dominations/releases/download/beta/latest.json',
-} as const;
 
 let _store: LazyStore | null = null;
 
@@ -167,11 +164,20 @@ export async function checkForUpdate(
       return { update: null, reason: 'throttled' };
     }
 
-    const channel = options.channel ?? (await getChannelPref());
+    // Persist the user's channel preference when the caller passes one.
+    // This does NOT change the URL we hit below — the plugin reads its
+    // endpoints from tauri.conf.json plugin config at startup. See header.
+    if (options.channel) {
+      await writeSetting<UpdateChannel>('channel', options.channel);
+      store.setChannel(options.channel);
+    }
+
     await writeSetting('lastCheckedAt', Date.now());
     store.setLastCheckedAt(Date.now());
 
-    const update = await check({ endpoints: [ENDPOINTS[channel]] });
+    // Tauri's plugin-updater reads `endpoints` from tauri.conf.json at
+    // startup. Its `check(options)` does NOT accept endpoint overrides.
+    const update = await check();
 
     if (!update) {
       store.setStatus('no_update');
@@ -184,17 +190,15 @@ export async function checkForUpdate(
       return { update: null, reason: 'skipped' };
     }
 
-    // Persist pending welcome notes so ChangelogSplash can replay them on
-    // the first launch of the new version. Cleared on dismiss.
-    const notes = typeof update.notes === 'string' ? update.notes.trim() : '';
-    if (update.version && notes.length > 0) {
-      await setPendingWelcome({ version: update.version, notes });
-    }
-
+    // The plugin's `Update` type in this version exposes only `version` —
+    // no notes/date/metadata exposed. The modal will show "no release
+    // notes attached" until we either upgrade to a plugin version that
+    // exposes them, or fetch the manifest ourselves via fetch() and parse
+    // `body` out (TODO post-launch).
     store.setAvailable({
       version: update.version,
-      notes,
-      pubDate: update.pubDate ?? null,
+      notes: '',
+      pubDate: null,
     });
     store.setStatus('available');
     return { update, reason: 'available' };
@@ -224,42 +228,43 @@ export async function downloadUpdate(
   store.setError(null);
 
   let chunked = 0;
-  let total: number | undefined = undefined;
 
   await update.downloadAndInstall((event) => {
     switch (event.event) {
       case 'Started':
         chunked = 0;
-        total = undefined;
         store.setProgress({
           chunkedBytes: 0,
           totalBytes: undefined,
-          percent: 0,
+          percent: undefined,
         });
-        cbs.onProgress?.(0, undefined, 0);
+        cbs.onProgress?.(0, undefined, undefined);
         break;
       case 'Progress': {
-        chunked += event.data.chunkLength;
-        total = event.data.contentLength ?? total;
-        const pct = total ? Math.round((chunked / total) * 100) : undefined;
+        // This plugin version exposes only per-chunk length; total size
+        // is unknown until the response completes. Show chunked count.
+        const len = typeof event.data?.chunkLength === 'number'
+          ? event.data.chunkLength
+          : 0;
+        chunked += len;
         store.setProgress({
           chunkedBytes: chunked,
-          totalBytes: total,
-          percent: pct,
+          totalBytes: undefined,
+          percent: undefined,
         });
-        cbs.onProgress?.(chunked, total, pct);
+        cbs.onProgress?.(chunked, undefined, undefined);
         break;
       }
-      case 'Finished': {
-        const finalTotal = total ?? event.data.length ?? chunked;
+      case 'Finished':
+        // Finished has no `data` field in this plugin version; finalize
+        // with the accumulated chunked count.
         store.setProgress({
-          chunkedBytes: finalTotal,
-          totalBytes: finalTotal,
-          percent: 100,
+          chunkedBytes: chunked,
+          totalBytes: undefined,
+          percent: undefined,
         });
-        cbs.onProgress?.(finalTotal, finalTotal, 100);
+        cbs.onProgress?.(chunked, undefined, undefined);
         break;
-      }
     }
   });
 
@@ -269,17 +274,13 @@ export async function downloadUpdate(
 /** Tolerate a small (≤ lifetime) cache clear between launches; treat the
  *  start of every session as a chance to flush stale caches. This is the
  *  "keep save, clear caches" choice from the requirements. */
-const CACHE_NAMES = [
-  'app-globe-textures',
-  'app-runtime-cache',
-];
+const CACHE_NAMES = ['app-globe-textures', 'app-runtime-cache'];
 
 export async function clearLocalCaches(): Promise<void> {
   if (typeof caches === 'undefined') return;
   try {
     for (const name of CACHE_NAMES) {
       const handle = await caches.open(name).catch(() => null);
-      // List keys then delete — caches.open returns same handle across calls.
       if (handle) {
         for (const req of await handle.keys()) {
           await handle.delete(req);
@@ -287,7 +288,7 @@ export async function clearLocalCaches(): Promise<void> {
       }
     }
   } catch {
-    // best-effort: don't block on cache cleanup
+    // best-effort
   }
 }
 
@@ -296,7 +297,6 @@ export async function bootstrapUpdaterSettings(): Promise<void> {
   await clearLocalCaches();
   const channel = await getChannelPref();
   useUpdaterStore.getState().setChannel(channel);
-  // Persist the running version so next launch can detect "we just updated".
   const v = await getCurrentAppVersion();
   if (v) await setLastInstalledVersion(v);
 }
