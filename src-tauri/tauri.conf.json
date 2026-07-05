@@ -1,0 +1,60 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Domination",
+  "version": "1.0.0",
+  "identifier": "com.dominion.wargame",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Domination",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Domination Project",
+    "category": "Strategy",
+    "shortDescription": "World conquest simulator",
+    "longDescription": "Pick a nation and conquer the world. Domination is a turn-based world conquest simulator with AI diplomacy, economy, and 250+ nations.",
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "_comment_pubkey": "Generate with: tauri signer generate --app-only. OR for the full updater keypair: 'tauri signer generate' and paste the printed PUBLIC key here. The matching PRIVATE key goes into GitHub Secrets as TAURI_SIGNING_PRIVATE_KEY (and its password as TAURI_SIGNING_PRIVATE_KEY_PASSWORD). The default value below is a placeholder so the config is JSON-valid until you run the generator.",
+      "endpoints": [
+        "https://github.com/runepro123/dominations/releases/latest/download/latest.json",
+        "https://github.com/runepro123/dominations/releases/download/beta/latest.json"
+      ],
+      "pubkey": "REPLACE_ME_WITH_TAURI_SIGNER_GENERATE_OUTPUT",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

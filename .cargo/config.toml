@@ -1,0 +1,13 @@
+# Cargo config — keeps the project in Dropbox, but moves the Rust build
+# artifacts (which the linker writes/rewrites a hundred times per compile)
+# to a non-synced path so Dropbox's file watcher can't lock them.
+#
+# Why a literal Windows path instead of "${TEMP}/domination-target":
+# the ${VAR} env-var expansion Cargo supports in SOME config keys does NOT
+# apply inside [build] target-dir — it treats ${TEMP} as a literal directory
+# name and joins it under the project root, which still lives in Dropbox.
+# Hardcoding the resolved value of %LOCALAPPDATA% bypasses that entirely.
+#
+# Forward slashes are accepted by Cargo on Windows.
+[build]
+target-dir = "C:/Users/goorr/AppData/Local/Temp/domination-target"

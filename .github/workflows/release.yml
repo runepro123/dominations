@@ -1,0 +1,80 @@
+name: Release
+
+# Trigger ONLY on git tag push of v<semver>. Push to main / PRs does nothing.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+# Released artifacts require write access to publish a release.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux build deps (NSIS via mingw + AppImage)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            nsis \
+            mingw-w64
+
+      - name: Install npm deps (postinstall patches three-stdlib)
+        run: npm ci
+
+      - name: Extract CHANGELOG section for this tag
+        id: notes
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          NOTES=$(node scripts/release-notes.mjs "$VERSION" || echo "")
+          {
+            echo "NOTES<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign, upload installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Domination ${{ github.ref_name }}'
+          releaseBody: ${{ steps.notes.outputs.NOTES }}
+          prerelease: false
+          # Cross-build both NSIS (Windows, via mingw) and AppImage (Linux).
+          args: --bundles nsis,appimage
