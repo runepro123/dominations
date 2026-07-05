@@ -1,14 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for the main window — covers core window APIs plus auto-update, persistent settings store, and app metadata (getVersion, restart).",
+  "description": "Default capabilities for the main window — covers core window/event/app APIs plus the auto-updater plugin and the persistent settings store.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "updater:default",
-    "store:default",
-    "app:default"
+    "store:default"
   ]
 }
