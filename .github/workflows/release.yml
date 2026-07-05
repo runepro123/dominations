@@ -10,14 +10,11 @@ on:
 permissions:
   contents: write
 
-# Run cargo's build cache on a clean per-run path. Crucial: do NOT use
-# the workspace-relative `target/` because `.cargo/config.toml` on older
-# commits may have hardcoded a Windows-style drive-letter path, which
-# breaks LD_LIBRARY_PATH on Linux. CARGO_TARGET_DIR is cross-platform
-# safe, including on Windows where it overrides the locked-on-Dropbox
-# default of `src-tauri/target/`.
-env:
-  CARGO_TARGET_DIR: ${{ runner.temp }}/domination-target
+# Cargo target-dir strategy:
+#   - CI uses the default `src-tauri/target/` so the Swatinem/rust-cache
+#     step can actually find and reuse build artifacts across runs.
+#   - Local Windows devs who hit the Dropbox file-lock collision can set
+#     `CARGO_TARGET_DIR` as a USER-level env var (see .cargo/config.toml).
 
 jobs:
   release:
@@ -85,5 +82,4 @@ jobs:
           releaseName: 'Domination ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.NOTES }}
           prerelease: false
-          # Cross-build both NSIS (Windows, via mingw) and AppImage (Linux).
           args: --bundles nsis,appimage

@@ -10,9 +10,10 @@
 #     builds blew up.
 #
 # Where the override lives now:
-#   - CI sets    `CARGO_TARGET_DIR: ${{ runner.temp }}/domination-target`
-#     in .github/workflows/release.yml.
-#   - Local devs on Windows set the same env var as a USER-level variable:
+#   - CI uses cargo's default target-dir (`src-tauri/target/`) so the
+#     Swatinem/rust-cache step in the release workflow restores cleanly.
+#   - Local devs (e.g. on Windows + Dropbox) set the same env var as a
+#     USER-level variable to redirect artifacts out of the watched folder:
 #       [Environment]::SetEnvironmentVariable(
 #         "CARGO_TARGET_DIR",
 #         "C:\Users\goorr\AppData\Local\Temp\domination-target",
