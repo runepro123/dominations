@@ -82,4 +82,8 @@ jobs:
           releaseName: 'Domination ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.NOTES }}
           prerelease: false
-          args: --bundles nsis,appimage
+          # Cross-build: native Linux AppImage + cross-compiled Windows NSIS.
+          # Tauri 2 defaults to host target only; --target tells it to also
+          # produce the Windows GNU variant. mingw-w64 + x86_64-pc-windows-gnu
+          # are installed above so the cross-link has the right toolchain.
+          args: --target x86_64-pc-windows-gnu --bundles nsis,appimage
