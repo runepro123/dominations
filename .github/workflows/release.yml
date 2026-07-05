@@ -17,10 +17,10 @@ permissions:
 #     `CARGO_TARGET_DIR` as a USER-level env var (see .cargo/config.toml).
 
 jobs:
-  release:
-    name: Build & publish release
+  linux:
+    name: Build Linux AppImage
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,17 +31,15 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Setup Rust toolchain
+      - name: Setup Rust toolchain (host target only)
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
 
-      - name: Cache cargo
+      - name: Cache cargo + target
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
-      - name: Install Linux build deps (NSIS via mingw + AppImage)
+      - name: Install Linux build deps (webkit2gtk + AppImage tooling)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -53,9 +51,7 @@ jobs:
             build-essential \
             curl \
             wget \
-            file \
-            nsis \
-            mingw-w64
+            file
 
       - name: Install npm deps (postinstall patches three-stdlib)
         run: npm ci
@@ -71,7 +67,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build, sign, upload installers
+      - name: Build, sign, upload Linux AppImage
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,8 +78,69 @@ jobs:
           releaseName: 'Domination ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.NOTES }}
           prerelease: false
-          # Cross-build: native Linux AppImage + cross-compiled Windows NSIS.
-          # Tauri 2 defaults to host target only; --target tells it to also
-          # produce the Windows GNU variant. mingw-w64 + x86_64-pc-windows-gnu
-          # are installed above so the cross-link has the right toolchain.
-          args: --target x86_64-pc-windows-gnu --bundles nsis,appimage
+          # Native Linux build: host target is x86_64-unknown-linux-gnu.
+          # No --target needed; tauri-action defaults to host. --bundles
+          # picks the AppImage output for this platform only.
+          args: --bundles appimage
+
+  windows:
+    name: Build Windows NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Rust toolchain (Windows MSVC target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install npm deps (postinstall patches three-stdlib)
+        run: npm ci
+
+      # Re-derive the release notes so this job can pass releaseBody too.
+      # The linux job's `steps.notes` output is not visible cross-job —
+      # GitHub Actions does not propagate step outputs between parallel
+      # jobs, so each platform job re-extracts the same CHANGELOG block
+      # independently. The result feeds tauri-action's releaseBody on
+      # both uploads; whichever job finishes last wins the final body,
+      # but since both produce identical text, this is deterministic.
+      - name: Extract CHANGELOG section for this tag
+        id: notes
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          NOTES=$(node scripts/release-notes.mjs "$VERSION" || echo "")
+          {
+            echo "NOTES<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign, upload Windows NSIS
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Domination ${{ github.ref_name }}'
+          releaseBody: ${{ steps.notes.outputs.NOTES }}
+          prerelease: false
+          # Native Windows MSVC build. No --target needed on Windows
+          # hosts (toolchain is already MSVC). --bundles picks the NSIS
+          # installer format; webview2 is bundled by the installer's
+          # bootstrapper as needed by the target machine.
+          args: --bundles nsis
