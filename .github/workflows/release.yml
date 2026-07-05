@@ -10,6 +10,15 @@ on:
 permissions:
   contents: write
 
+# Run cargo's build cache on a clean per-run path. Crucial: do NOT use
+# the workspace-relative `target/` because `.cargo/config.toml` on older
+# commits may have hardcoded a Windows-style drive-letter path, which
+# breaks LD_LIBRARY_PATH on Linux. CARGO_TARGET_DIR is cross-platform
+# safe, including on Windows where it overrides the locked-on-Dropbox
+# default of `src-tauri/target/`.
+env:
+  CARGO_TARGET_DIR: ${{ runner.temp }}/domination-target
+
 jobs:
   release:
     name: Build & publish release

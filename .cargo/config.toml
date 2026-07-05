@@ -1,13 +1,24 @@
-# Cargo config — keeps the project in Dropbox, but moves the Rust build
-# artifacts (which the linker writes/rewrites a hundred times per compile)
-# to a non-synced path so Dropbox's file watcher can't lock them.
+# Cargo config for this repo.
 #
-# Why a literal Windows path instead of "${TEMP}/domination-target":
-# the ${VAR} env-var expansion Cargo supports in SOME config keys does NOT
-# apply inside [build] target-dir — it treats ${TEMP} as a literal directory
-# name and joins it under the project root, which still lives in Dropbox.
-# Hardcoding the resolved value of %LOCALAPPDATA% bypasses that entirely.
+# Empty on purpose. Earlier history:
+#   - The original target-dir override redirected cargo's build artifacts
+#     to a non-Dropbox path on Windows (Dropbox's file watcher locks the
+#     linker temp dir, causing `os error 32` during `cargo build`).
+#   - That hardcoded Windows path (`C:/Users/...`) was a literal string
+#     that cargo joined onto the workspace root on Linux CI — the colon in
+#     the drive letter corrupted LD_LIBRARY_PATH, so cross-platform CI
+#     builds blew up.
 #
-# Forward slashes are accepted by Cargo on Windows.
-[build]
-target-dir = "C:/Users/goorr/AppData/Local/Temp/domination-target"
+# Where the override lives now:
+#   - CI sets    `CARGO_TARGET_DIR: ${{ runner.temp }}/domination-target`
+#     in .github/workflows/release.yml.
+#   - Local devs on Windows set the same env var as a USER-level variable:
+#       [Environment]::SetEnvironmentVariable(
+#         "CARGO_TARGET_DIR",
+#         "C:\Users\goorr\AppData\Local\Temp\domination-target",
+#         "User"
+#       )
+#     This applies to every cargo invocation on the machine with no repo
+#     config and ships cross-platform-safe.
+
+# Intentionally no [build] target-dir here.
