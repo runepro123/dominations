@@ -54,7 +54,7 @@
         "https://github.com/runepro123/dominations/releases/latest/download/latest.json",
         "https://github.com/runepro123/dominations/releases/download/beta/latest.json"
       ],
-      "pubkey": "REPLACE_ME_WITH_TAURI_SIGNER_GENERATE_OUTPUT",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNUExNUYwMjA4N0M3RjkKUldUNXg0Y2c4QlZhYzcyZytPL1JGZnpPZDlrOUg4c3EwaU5JMVBBS3RHZUI1R3BnRkoxbTRlOWcK",
       "windows": {
         "installMode": "passive"
       }
