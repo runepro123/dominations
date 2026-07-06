@@ -67,6 +67,16 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Install tauri-cli
+        # `cargo tauri build` is a CARGO SUBCOMMAND provided by the
+        # `tauri-cli` crate (= `cargo-tauri` binary). `dtolnay/rust-toolchain`
+        # installs only Rust; tauri-cli is a separate crate that must be
+        # installed on the runner or the build errors with
+        # "no such command: tauri" (exit 101).
+        # Pin ^2.11 to match our `tauri = "2.11.3"` runtime; --locked makes
+        # registry resolution reproducible across runs.
+        run: cargo install tauri-cli --locked --version "^2.11"
+
       - name: Build Linux AppImage + updater payloads
         # tauri-action@v0/@v1 silently dropped Tauri v2 updater payloads
         # (.sig, .AppImage.tar.gz, .nsis.zip, latest.json). Build via the
@@ -160,6 +170,13 @@ jobs:
             echo "$NOTES"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Install tauri-cli
+        # See matching comment in the linux job: tauri-cli is a separate
+        # crate from tauri itself and `dtolnay/rust-toolchain` doesn't
+        # provide it. Without this step the runner errors with
+        # "no such command: tauri".
+        run: cargo install tauri-cli --locked --version "^2.11"
 
       - name: Build Windows NSIS + updater payloads
         # See the matching comment in the linux job. CLI-direct build so
