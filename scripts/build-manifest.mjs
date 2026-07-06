@@ -63,7 +63,17 @@ if (!tag || !repo) {
   process.exit(1);
 }
 
-const releaseBase = `https://github.com/${repo}/releases/download/${tag}`;
+// When R2_PUBLIC_BASE is set in the env (via `secrets.R2_PUBLIC_BASE`
+// in the release workflow), point the manifest url() field for every
+// platform entry at Cloudflare R2 so endpoints[0] in tauri.conf.json
+// (the R2 URL) actually returns a populated manifest without first
+// fetching every payload from GitHub Releases. When unset (legacy
+// pre-R2 run), fall back to the GitHub Releases base url unchanged
+// so existing CI runs stay bit-for-bit compatible with the prior
+// softprops-only contract.
+const releaseBase = process.env.R2_PUBLIC_BASE
+  ? `${process.env.R2_PUBLIC_BASE}/${tag}`
+  : `https://github.com/${repo}/releases/download/${tag}`;
 
 // Walk the bundle dir and return every path ending in `.sig`.
 function findSigFiles(dir) {

@@ -50,7 +50,9 @@
   "plugins": {
     "updater": {
       "_comment_pubkey": "TAURI 2 UPDATER PUBLIC KEY (key ID 25319536ux5C1F4A73). Baked into the v1.0.2+ client at compile time; runtime updater verification of latest.json uses the matching private key held ONLY in GitHub Secrets. To rotate: `cargo tauri signer generate -w ~/.tauri/keys/keypair.key` locally, paste the new PUBLIC line here, then save the new PRIVATE line + its password as GitHub Secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Rotation breaks verification for older client releases; bump the version alongside.",
+      "_comment_endpoints": "Tauri tries each URL in order, dropping any that 404/parse-fail. The R2 URL is tried first once the Cloudflare bucket is provisioned AND the user replaces PLACEHOLDER_BUCKET_ID below with the real one from pub-BUCKET_ID.r2.dev. GitHub Releases URLs are kept below as automatic fallbacks so the auto-updater keeps working through the R2 setup window. R2_PUBLIC_BASE GitHub Secret MUST mirror this URL (minus the trailing /latest.json) so that build-manifest.mjs composes platform URLs that resolve to the same bucket.",
       "endpoints": [
+        "https://pub-PLACEHOLDER_BUCKET_ID.r2.dev/releases/latest.json",
         "https://github.com/runepro123/dominations/releases/latest/download/latest.json",
         "https://github.com/runepro123/dominations/releases/download/beta/latest.json"
       ],

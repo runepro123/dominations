@@ -142,10 +142,15 @@ jobs:
         # Linux runs first. There's no existing remote latest.json yet,
         # so the script builds a fresh manifest from the local *.sig +
         # tar.gz files only and writes latest.json to the repo root.
+        # R2_PUBLIC_BASE drives the url() field for every platform entry
+        # when the R2 dashboard is wired up; unset yields the GitHub
+        # Releases base url, preserving the legacy flow until user
+        # provisions R2.
         run: node scripts/build-manifest.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
+          R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -162,6 +167,29 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
             src-tauri/target/release/bundle/appimage/*.sig
             latest.json
+
+      - name: Upload to Cloudflare R2 (linux)
+        # Mirror the github-release upload into Cloudflare R2 so the
+        # updater endpoint at pub-<BUCKET_ID>.r2.dev/releases/latest.json
+        # returns a populated manifest. .r2.dev domains bypass Cloudflare's
+        # CDN by default so latest.json updates are immediate (no edge-cache
+        # caveat). `aws s3 cp` uses AWS_ENDPOINT_URL env to route to R2
+        # (S3-compatible API); awscli is preinstalled on ubuntu-latest.
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          aws s3 cp src-tauri/target/release/bundle/appimage/ s3://$R2_BUCKET/releases/$TAG_NAME/ \
+            --recursive --exclude "*" --include "*.AppImage" --include "*.AppImage.tar.gz" --include "*.sig"
+          # No-cache header on latest.json so a CI run mid-flight
+          # between linux and windows jobs cannot get cache-frozen at
+          # the linux-only manifest for hours.
+          aws s3 cp latest.json s3://$R2_BUCKET/releases/latest.json --cache-control "no-cache, max-age=0"
 
   windows:
     # SERIALIZE: the Windows job waits for the Linux job to finish so
@@ -355,14 +383,17 @@ jobs:
 
       - name: Merge updater manifest (Windows entry with Linux)
         # Windows runs SECOND via `needs: linux`. The script fetches the
-        # linux-uploaded latest.json from the release, keeps the linux
-        # entry, adds the windows entry from the local .sig, and writes
-        # the merged file back. softprops then re-uploads with
-        # overwrite:true, clobbering the linux-only manifest.
+        # github-uploaded latest.json, keeps the linux entry, adds the
+        # windows entry from the local .sig, and (when R2_PUBLIC_BASE
+        # is set) composes all platform urls against the R2 base url so
+        # endpoints[0] in tauri.conf.json (the R2 URL) hits the right
+        # files. softprops then re-uploads the merged manifest to GitHub;
+        # the Upload-to-R2 step below mirrors it into R2.
         run: node scripts/build-manifest.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
+          R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -376,3 +407,21 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/*.sig
             latest.json
+
+      - name: Upload to Cloudflare R2 (windows)
+        # Mirror the github-release upload into Cloudflare R2. Runs SECOND
+        # via `needs: linux`, so this step's latest.json cp clobbers R2's
+        # linux-only manifest with the merged linux+windows manifest,
+        # matching the softprops overwrite behaviour above.
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          aws s3 cp src-tauri/target/release/bundle/nsis/ s3://$R2_BUCKET/releases/$TAG_NAME/ \
+            --recursive --exclude "*" --include "*.exe" --include "*.nsis.zip" --include "*.sig"
+          aws s3 cp latest.json s3://$R2_BUCKET/releases/latest.json --cache-control "no-cache, max-age=0"
