@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Domination",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.dominion.wargame",
   "build": {
     "frontendDist": "../dist",
@@ -49,12 +49,12 @@
   },
   "plugins": {
     "updater": {
-      "_comment_pubkey": "Generate with: tauri signer generate --app-only. OR for the full updater keypair: 'tauri signer generate' and paste the printed PUBLIC key here. The matching PRIVATE key goes into GitHub Secrets as TAURI_SIGNING_PRIVATE_KEY (and its password as TAURI_SIGNING_PRIVATE_KEY_PASSWORD). The default value below is a placeholder so the config is JSON-valid until you run the generator.",
+      "_comment_pubkey": "TAURI 2 UPDATER PUBLIC KEY (key ID 25319536ux5C1F4A73). Baked into the v1.0.2+ client at compile time; runtime updater verification of latest.json uses the matching private key held ONLY in GitHub Secrets. To rotate: `cargo tauri signer generate -w ~/.tauri/keys/keypair.key` locally, paste the new PUBLIC line here, then save the new PRIVATE line + its password as GitHub Secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Rotation breaks verification for older client releases; bump the version alongside.",
       "endpoints": [
         "https://github.com/runepro123/dominations/releases/latest/download/latest.json",
         "https://github.com/runepro123/dominations/releases/download/beta/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNUExNUYwMjA4N0M3RjkKUldUNXg0Y2c4QlZhYzcyZytPL1JGZnpPZDlrOUg4c3EwaU5JMVBBS3RHZUI1R3BnRkoxbTRlOWcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1MzE5NTM2NUMxRjRBNzMKUldSelNoOWNOcFV4SmE2bnpRWUNlaVZWWERDQmxHNlhTNjdIUTN4eFpaQ0swZnZqL1JTYlE2dWoK",
       "windows": {
         "installMode": "passive"
       }
