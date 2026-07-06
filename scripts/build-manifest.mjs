@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 /**
- * Build the Tauri 2 updater manifest (`latest.json`) for the GitHub
- * release and write it next to the repo root so softprops/action-gh-release
- * picks it up during the upload step.
+ * Build the Tauri 2 updater manifest (`latest.json`) and write it next
+ * to the repo root so the next workflow step can `aws s3 cp` it to
+ * Cloudflare R2. R2 is the SOLE updater host (NO GitHub Releases
+ * fallback); `endpoints[]` in src-tauri/tauri.conf.json contains only
+ * the R2 URL.
  *
  * Behavior on the matrix:
- *   - Linux job (runs FIRST): the remote release has no latest.json yet,
- *     so this script constructs a fresh manifest containing only the
- *     linux entry found in src-tauri/target/release/bundle/appimage/.
- *   - Windows job (runs SECOND via `needs: linux`): fetches the remote
- *     latest.json (containing the linux entry uploaded by the first job),
- *     keeps that entry, and adds the windows entry from the local
- *     *.sig files in src-tauri/target/release/bundle/nsis/. The merged
- *     file is written back to disk; softprops then re-uploads with
- *     overwrite:true, clobbering the linux-only manifest.
+ *   - Linux job (runs FIRST): there's no R2 latest.json yet, so this
+ *     script constructs a fresh manifest containing only the linux
+ *     entry found in src-tauri/target/release/bundle/appimage/.
+ *   - Windows job (runs SECOND via `needs: linux`): the linux build
+ *     uploaded a linux-only latest.json to R2; that URL is fetched
+ *     here directly (R2-public, no auth), the linux entry is preserved,
+ *     and the windows entry from local *.sig files in
+ *     src-tauri/target/release/bundle/nsis/ is merged in. The merged
+ *     file is written back to disk; the subsequent R2 clobber upload
+ *     step overwrites the linux-only manifest. `--cache-control no-cache`
+ *     on the R2 cp prevents edge-cache lag between jobs.
  *
  * Tauri v2 latest.json schema (per tauri-plugin-updater):
  *   {
@@ -37,7 +41,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -56,24 +59,23 @@ const DIR_TO_PLATFORM = {
 };
 
 const tag = process.env.TAG_NAME || process.env.GITHUB_REF_NAME;
-const repo = process.env.GITHUB_REPOSITORY;
+const r2Base = process.env.R2_PUBLIC_BASE;
 
-if (!tag || !repo) {
-  console.error('ERROR: TAG_NAME and GITHUB_REPOSITORY must be set in the env');
+if (!tag) {
+  console.error('ERROR: TAG_NAME must be set in the env (passed from `github.ref_name` in the workflow)');
+  process.exit(1);
+}
+if (!r2Base) {
+  console.error('ERROR: R2_PUBLIC_BASE must be set in the env. R2 is the SOLE updater host - configure the repo secret and re-run the pipeline.');
   process.exit(1);
 }
 
-// When R2_PUBLIC_BASE is set in the env (via `secrets.R2_PUBLIC_BASE`
-// in the release workflow), point the manifest url() field for every
-// platform entry at Cloudflare R2 so endpoints[0] in tauri.conf.json
-// (the R2 URL) actually returns a populated manifest without first
-// fetching every payload from GitHub Releases. When unset (legacy
-// pre-R2 run), fall back to the GitHub Releases base url unchanged
-// so existing CI runs stay bit-for-bit compatible with the prior
-// softprops-only contract.
-const releaseBase = process.env.R2_PUBLIC_BASE
-  ? `${process.env.R2_PUBLIC_BASE}/${tag}`
-  : `https://github.com/${repo}/releases/download/${tag}`;
+// Strip any trailing slash on r2Base so `${r2Base}/${tag}` never
+// produces `//` if the secret ends in `/`. Aliased so the same
+// canonical form is reused by `fetchExistingManifest` below for
+// the merge-source URL (`${r2BaseClean}/latest.json`).
+const r2BaseClean = r2Base.replace(/\/$/, '');
+const releaseBase = `${r2BaseClean}/${tag}`;
 
 // Walk the bundle dir and return every path ending in `.sig`.
 function findSigFiles(dir) {
@@ -90,31 +92,22 @@ function findSigFiles(dir) {
   return out;
 }
 
-// Pull the existing latest.json from the release — used by the windows
-// job to merge with the linux entry uploaded first. Returns null if
-// the asset doesn't exist yet (linux first pass) or any fetch error.
+// Pull the existing latest.json straight from R2 - used by the windows
+// job to merge with the linux entry uploaded first. R2-public URLs
+// serve anonymously over HTTPS with no auth/CORS dance. Returns null
+// on the linux first pass (the linux job hasn't uploaded yet) or on
+// any fetch error.
 async function fetchExistingManifest() {
   try {
-    const url = execFileSync(
-      'gh',
-      [
-        'release', 'view', tag,
-        '--json', 'assets',
-        '--jq', '.assets[] | select(.name == "latest.json") | .url',
-      ],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    ).trim();
-    if (!url) return null;
-    const resp = await fetch(url);
+    const r2LatestUrl = `${r2BaseClean}/latest.json`;
+    const resp = await fetch(r2LatestUrl);
     if (!resp.ok) {
-      console.log(`Remote latest.json fetch returned HTTP ${resp.status} — building fresh manifest`);
+      console.log(`R2 latest.json fetch returned HTTP ${resp.status} - building fresh manifest`);
       return null;
     }
     return await resp.json();
   } catch (e) {
-    // gh CLI exits non-zero if there are no matching assets. That's the
-    // expected case on the linux first pass; treat it as "no remote yet".
-    console.log(`No remote latest.json to merge with: ${e.message?.split('\n')[0]}`);
+    console.log(`R2 latest.json fetch failed: ${e.message?.split('\n')[0]}`);
     return null;
   }
 }
@@ -171,8 +164,8 @@ if (localSigs.length === 0) {
     `     repo secrets (Settings > Secrets and variables > Actions):\n` +
     `       TAURI_SIGNING_PRIVATE_KEY         = <private base64>\n` +
     `       TAURI_SIGNING_PRIVATE_KEY_PASSWORD = <password>\n` +
-    `  4. Re-run the release pipeline (retag v1.0.1 --force or bump\n` +
-    `     to v1.0.2 and push that tag).\n\n` +
+    `  4. Re-run the release pipeline (bump to the next semver, tag v<X.Y.Z>, then\n` +
+    `     git push origin v<X.Y.Z> --force to trigger the CI matrix).\n\n` +
     `Directories scanned:\n${scannedDirs}\n`
   );
 }

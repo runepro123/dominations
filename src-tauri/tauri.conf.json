@@ -50,11 +50,9 @@
   "plugins": {
     "updater": {
       "_comment_pubkey": "TAURI 2 UPDATER PUBLIC KEY (key ID 25319536ux5C1F4A73). Baked into the v1.0.2+ client at compile time; runtime updater verification of latest.json uses the matching private key held ONLY in GitHub Secrets. To rotate: `cargo tauri signer generate -w ~/.tauri/keys/keypair.key` locally, paste the new PUBLIC line here, then save the new PRIVATE line + its password as GitHub Secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Rotation breaks verification for older client releases; bump the version alongside.",
-      "_comment_endpoints": "Tauri tries each URL in order, dropping any that 404/parse-fail. The R2 URL is tried first once the Cloudflare bucket is provisioned AND the user replaces PLACEHOLDER_BUCKET_ID below with the real one from pub-BUCKET_ID.r2.dev. GitHub Releases URLs are kept below as automatic fallbacks so the auto-updater keeps working through the R2 setup window. R2_PUBLIC_BASE GitHub Secret MUST mirror this URL (minus the trailing /latest.json) so that build-manifest.mjs composes platform URLs that resolve to the same bucket.",
+      "_comment_endpoints": "Tauri's SOLE updater host: Cloudflare R2. The client tries this single URL; on 404 / parse error / signature mismatch the in-app updater shows 'Update failed - check connection' and the user re-downloads manually from your website. No GitHub Releases fallback exists - if R2 is down, clients do not auto-update. R2_PUBLIC_BASE GitHub Secret MUST mirror this URL (minus the trailing /latest.json) so that build-manifest.mjs composes platform URLs that resolve to the same bucket. To migrate R2 bucket: change this URL + the R2_PUBLIC_BASE secret + (if the bucket hostname changes) the bucket's public-access custom domain in Cloudflare.",
       "endpoints": [
-        "https://pub-ae561f222b5e4d5994bb3b6d56c2968e.r2.dev/releases/latest.json",
-        "https://github.com/runepro123/dominations/releases/latest/download/latest.json",
-        "https://github.com/runepro123/dominations/releases/download/beta/latest.json"
+        "https://pub-ae561f222b5e4d5994bb3b6d56c2968e.r2.dev/releases/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1MzE5NTM2NUMxRjRBNzMKUldSelNoOWNOcFV4SmE2bnpRWUNlaVZWWERDQmxHNlhTNjdIUTN4eFpaQ0swZnZqL1JTYlE2dWoK",
       "windows": {
