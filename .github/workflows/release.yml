@@ -68,7 +68,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build, sign, upload Linux AppImage
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -78,15 +78,12 @@ jobs:
           releaseName: 'Domination ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.NOTES }}
           prerelease: false
-          # Force updater manifest generation. tauri-action@v0's auto-detect
-          # of Tauri v2's `plugins.updater` block (in tauri.conf.json) is
-          # silently failing for this project, causing the action to skip
-          # the latest.json upload entirely. Setting includeUpdaterJson
-          # explicitly overrides that auto-detect and forces the action
-          # to sign + upload the manifest. Default is true, but the
-          # action's internal logic downgrades to false when its parser
-          # misses the v2 updater config, so being explicit is required.
-          includeUpdaterJson: true
+          # tauri-action@v1 (released for Tauri v2) auto-detects the
+          # `plugins.updater` block, signs each updater payload, and
+          # uploads `.sig` + `.AppImage.tar.gz` (or `.nsis.zip` on
+          # Windows) + `latest.json` natively. Previous @v0 silently
+          # dropped the v2 updater artifacts. No includeUpdaterJson
+          # workaround needed.
           # Native Linux build: host target is x86_64-unknown-linux-gnu.
           # No --target needed; tauri-action defaults to host. --bundles
           # picks the AppImage output for this platform only.
@@ -151,7 +148,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build, sign, upload Windows NSIS
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -161,13 +158,10 @@ jobs:
           releaseName: 'Domination ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.NOTES }}
           prerelease: false
-          # See the matching comment in the linux job above — this flag
-          # forces tauri-action@v0 to generate latest.json even when its
-          # auto-detect of the v2 plugins.updater block fails. The
-          # windows job (running second via `needs: linux`) will then
-          # read the linux-uploaded latest.json, append the NSIS entry,
-          # and re-upload the merged manifest.
-          includeUpdaterJson: true
+          # tauri-action@v1 reads the linux-uploaded latest.json during
+          # the second pass (via `needs: linux`), appends the NSIS
+          # entry, signs both payloads, and re-uploads the merged
+          # manifest. No includeUpdaterJson workaround needed.
           # Native Windows MSVC build. No --target needed on Windows
           # hosts (toolchain is already MSVC). --bundles picks the NSIS
           # installer format; webview2 is bundled by the installer's
