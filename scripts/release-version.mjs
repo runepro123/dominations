@@ -49,6 +49,21 @@ writeJSON(pkgPath, pkg);
 
 const tauri = readJSON(tauriPath);
 tauri.version = next;
+
+// Rewrite the hardcoded `/v<X.Y.Z>/` segment in
+// `plugins.updater.endpoints[]` so the per-tag fallback URL follows the
+// bump. The `releases/download/v<X.Y.Z>/` URL is the version-pinned
+// fallback clients built from THIS version fall through to when the
+// `releases/latest` URL is stale or down. Keeping it in sync means
+// clients update against the correct manifest path on the next launch.
+if (Array.isArray(tauri.plugins?.updater?.endpoints)) {
+  const fromSeg = `releases/download/v${current}/`;
+  const toSeg = `releases/download/v${next}/`;
+  tauri.plugins.updater.endpoints = tauri.plugins.updater.endpoints.map(
+    (ep) => typeof ep === 'string' && ep.includes(fromSeg) ? ep.replace(fromSeg, toSeg) : ep,
+  );
+}
+
 writeJSON(tauriPath, tauri);
 
 console.log('');
