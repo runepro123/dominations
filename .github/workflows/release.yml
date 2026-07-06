@@ -187,6 +187,53 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Self-sign Windows installer (Authenticode, to clear AV false positives)
+        # Unsigned NSIS installers from new publishers trigger heuristic
+        # AV detections like Kaspersky `UDS:Trojan-PSW.Win64.Disco.sbw`
+        # even on legitimate software. Adding an Authenticode signature
+        # by ANY publisher (even self-signed) raises the AV trust floor
+        # enough to stop the false positive. Per CI run we generate an
+        # ephemeral self-signed `CodeSigningCert` via PowerShell,
+        # then call `Set-AuthenticodeSignature` with SHA-256 and a
+        # DigiCert RFC3161 timestamp (graceful fallback if the
+        # timestamp request fails - the signature still kills the AV
+        # false positive, it just expires when the cert does).
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          Write-Host '==> Generating ephemeral self-signed code-signing cert'
+          $cert = New-SelfSignedCertificate `
+            -Subject 'CN=Domination Dev' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -Type CodeSigningCert `
+            -KeyUsage DigitalSignature `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -NotAfter (Get-Date).AddYears(5)
+
+          $exe = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -Recurse | Select-Object -First 1
+          if (-not $exe) { throw 'no NSIS setup.exe found under src-tauri/target/release/bundle/nsis' }
+
+          Write-Host "==> Self-signing $($exe.Name) with SHA-256 + DigiCert RFC3161 timestamp"
+          try {
+            Set-AuthenticodeSignature `
+              -FilePath $exe.FullName `
+              -Certificate $cert `
+              -HashAlgorithm SHA256 `
+              -TimestampServer 'http://timestamp.digicert.com'
+          } catch {
+            Write-Warning "Timestamp request failed (network/TSA outage). Falling back to untimestamped sign - still kills AV FP, just expires with the cert."
+            Set-AuthenticodeSignature `
+              -FilePath $exe.FullName `
+              -Certificate $cert `
+              -HashAlgorithm SHA256
+          }
+
+          $sig = Get-AuthenticodeSignature -FilePath $exe.FullName
+          Write-Host "==> Signature status: $($sig.Status) | Signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Authenticode signature is $($sig.Status), expected Valid" }
+
       - name: Merge updater manifest (Windows entry with Linux)
         # Windows runs SECOND via `needs: linux`. The script fetches the
         # linux-uploaded latest.json from the release, keeps the linux
