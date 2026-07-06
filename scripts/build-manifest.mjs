@@ -130,6 +130,39 @@ if (existing?.platforms) {
 
 // Add (or overwrite) an entry for every local .sig file we find.
 const localSigs = findSigFiles(bundleDir);
+if (localSigs.length === 0) {
+  // Loud-fail instead of silently writing platforms: {}. tauri's
+  // in-app updater plugin hits a runtime exception on retrieval
+  // ("None of the fallback platforms ... were found in the response
+  // 'platforms' object") which is far worse UX than a CI failure
+  // with a clear error message. The previous version of this script
+  // happily wrote an empty platforms object and the release then
+  // shipped to users completely broken for months at a time.
+  const scannedDirs = ['appimage', 'nsis', 'deb', 'rpm', 'msi', 'app'].map((d) => {
+    const fullPath = path.join(bundleDir, d);
+    return `  - ${path.relative(repoRoot, fullPath)} (${fs.existsSync(fullPath) ? 'exists, but contains NO .sig file' : 'missing entirely'})`;
+  }).join('\n');
+  throw new Error(
+    `No .sig files found in any bundle directory. Tauri produces these\n` +
+    `only when the updater signing keypair is properly configured: an\n` +
+    `empty manifest will reach the release and break the in-app updater\n` +
+    `at runtime ("None of the fallback platforms ... were found").\n\n` +
+    `Likely fix:\n` +
+    `  1. Generate an updater keypair LOCALLY (one-time):\n` +
+    `       tauri signer generate -w ~/.tauri/keys/keypair.key\n` +
+    `     It prints PUBLIC <base64>, PRIVATE <base64> + asks for a\n` +
+    `     password. Save both outputs and the password.\n` +
+    `  2. Paste the PUBLIC <base64> string into src-tauri/tauri.conf.json\n` +
+    `     under plugins.updater.pubkey.\n` +
+    `  3. Save the PRIVATE <base64> string + its password as GitHub\n` +
+    `     repo secrets (Settings > Secrets and variables > Actions):\n` +
+    `       TAURI_SIGNING_PRIVATE_KEY         = <private base64>\n` +
+    `       TAURI_SIGNING_PRIVATE_KEY_PASSWORD = <password>\n` +
+    `  4. Re-run the release pipeline (retag v1.0.1 --force or bump\n` +
+    `     to v1.0.2 and push that tag).\n\n` +
+    `Directories scanned:\n${scannedDirs}\n`
+  );
+}
 console.log(`Found ${localSigs.length} local .sig file(s):`);
 for (const sigPath of localSigs) {
   const subdir = path.basename(path.dirname(sigPath));
