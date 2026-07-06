@@ -77,15 +77,65 @@ jobs:
         # registry resolution reproducible across runs.
         run: cargo install tauri-cli --locked --version "^2.11"
 
+      - name: Materialize updater signing key
+        # GH Secret values pasted by humans come in many shapes - sometimes
+        # the raw 2-line `cat keypair.key` text, sometimes an extra base64
+        # layer on top, sometimes empty. Auto-detect + write the canonical
+        # rsign envelope to /tmp/keypair.key so the next step can use
+        # Tauri-cli's `path:` prefix instead of relying on brittle inline
+        # env var content. GitHub Actions' ${{ secrets.X }} interpolation
+        # preserves multi-line values, so $KEY arrives with literal
+        # newlines intact.
+        run: |
+          set -e
+          KEY="$TAURI_SIGNING_PRIVATE_KEY"
+          echo "==> Signing-key diagnostic"
+          echo "    raw length    : ${#KEY}"
+          echo "    first 40 chars: '${KEY:0:40}'"
+          case "$KEY" in
+            "untrusted comment:"*)
+              FORMAT=RAW
+              printf '%s' "$KEY" > /tmp/keypair.key
+              ;;
+            "dW50cnVzdGVk"*)
+              # Looks like base64-of-rsign. Decode and re-verify.
+              DECODED=$(printf '%s' "$KEY" | base64 -d 2>/dev/null || true)
+              if [[ "$DECODED" == "untrusted comment:"* ]]; then
+                FORMAT=BASE64_OF_RAW
+                printf '%s' "$DECODED" > /tmp/keypair.key
+              else
+                FORMAT=BASE64_OF_UNKNOWN
+                printf '%s' "$KEY" > /tmp/keypair.key
+              fi
+              ;;
+            "")
+              echo "    format        : EMPTY - TAURI_SIGNING_PRIVATE_KEY secret value is missing."
+              echo "    aborting      : set the secret in repo Settings -> Secrets and variables -> Actions."
+              exit 1
+              ;;
+            *)
+              FORMAT=UNKNOWN
+              printf '%s' "$KEY" > /tmp/keypair.key
+              echo "    warning       : unrecognized envelope, writing raw and hoping tauri accepts."
+              ;;
+          esac
+          echo "    format        : ${FORMAT}"
+          chmod 600 /tmp/keypair.key
+          echo "    file head     : $(head -1 /tmp/keypair.key | head -c 80)"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Linux AppImage + updater payloads
         # tauri-action@v0/@v1 silently dropped Tauri v2 updater payloads
         # (.sig, .AppImage.tar.gz, .nsis.zip, latest.json). Build via the
         # CLI directly so EVERY artifact lands on disk under
         # src-tauri/target/release/bundle/ and can be uploaded explicitly
-        # by softprops below.
+        # by softprops below. Signing key was materialized in the step
+        # above; the env var below points at the file via Tauri's `path:`
+        # prefix.
         run: cargo tauri build --bundles appimage
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: path:/tmp/keypair.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Build updater manifest (Linux entry)
@@ -178,13 +228,61 @@ jobs:
         # "no such command: tauri".
         run: cargo install tauri-cli --locked --version "^2.11"
 
+      - name: Materialize updater signing key
+        # Same logic as the linux materialize step. Detect raw vs
+        # base64-of-raw and write to /tmp/keypair.key. `shell: bash` is
+        # required because the matcher uses bash `${#KEY}` length syntax
+        # (PowerShell parses `${VAR}` differently and would treat
+        # `${#KEY}:0:40` as a runtime command).
+        shell: bash
+        run: |
+          set -e
+          KEY="$TAURI_SIGNING_PRIVATE_KEY"
+          echo "==> Signing-key diagnostic"
+          echo "    raw length    : ${#KEY}"
+          echo "    first 40 chars: '${KEY:0:40}'"
+          case "$KEY" in
+            "untrusted comment:"*)
+              FORMAT=RAW
+              printf '%s' "$KEY" > /tmp/keypair.key
+              ;;
+            "dW50cnVzdGVk"*)
+              # Looks like base64-of-rsign. Decode and re-verify.
+              DECODED=$(printf '%s' "$KEY" | base64 -d 2>/dev/null || true)
+              if [[ "$DECODED" == "untrusted comment:"* ]]; then
+                FORMAT=BASE64_OF_RAW
+                printf '%s' "$DECODED" > /tmp/keypair.key
+              else
+                FORMAT=BASE64_OF_UNKNOWN
+                printf '%s' "$KEY" > /tmp/keypair.key
+              fi
+              ;;
+            "")
+              echo "    format        : EMPTY - TAURI_SIGNING_PRIVATE_KEY secret value is missing."
+              echo "    aborting      : set the secret in repo Settings -> Secrets and variables -> Actions."
+              exit 1
+              ;;
+            *)
+              FORMAT=UNKNOWN
+              printf '%s' "$KEY" > /tmp/keypair.key
+              echo "    warning       : unrecognized envelope, writing raw and hoping tauri accepts."
+              ;;
+          esac
+          echo "    format        : ${FORMAT}"
+          chmod 600 /tmp/keypair.key
+          echo "    file head     : $(head -1 /tmp/keypair.key | head -c 80)"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Windows NSIS + updater payloads
         # See the matching comment in the linux job. CLI-direct build so
         # .exe + .nsis.zip + their signatures all land on disk for the
-        # explicit softprops upload below.
+        # explicit softprops upload below. Signing key was materialized
+        # in the step above; the env var below points at the file via
+        # Tauri's `path:` prefix.
         run: cargo tauri build --bundles nsis
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: path:/tmp/keypair.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Self-sign Windows installer (Authenticode, to clear AV false positives)
