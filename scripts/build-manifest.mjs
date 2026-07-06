@@ -149,7 +149,10 @@ if (localSigs.length === 0) {
     `at runtime ("None of the fallback platforms ... were found").\n\n` +
     `Likely fix:\n` +
     `  1. Generate an updater keypair LOCALLY (one-time):\n` +
-    `       tauri signer generate -w ~/.tauri/keys/keypair.key\n` +
+    `       cargo tauri signer generate -w ~/.tauri/keys/keypair.key\n` +
+    `     (canonical Tauri 2 CLI invocation - also works as\n` +
+    `      'tauri signer generate' if you have cargo-installed the\n` +
+    `      tauri-cli binary and added its bin dir to PATH)\n` +
     `     It prints PUBLIC <base64>, PRIVATE <base64> + asks for a\n` +
     `     password. Save both outputs and the password.\n` +
     `  2. Paste the PUBLIC <base64> string into src-tauri/tauri.conf.json\n` +
